@@ -11,6 +11,12 @@ class AuthRepository implements AuthRepositoryInterface
 {
     public function register(array $data)
     {
+        // kode yoga (password tidak di hash)
+        // User::create([
+        //     'name' => $data['name'],
+        //     'email' => $data['email'],
+        //     'password' => $data['password']
+        // ]);
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
@@ -28,6 +34,11 @@ class AuthRepository implements AuthRepositoryInterface
 
     public function login(array $data)
     {
+
+        // kode yoga sebelumnya
+        // return User::where('email', $data['email'])
+        // ->first();
+
         if (!Auth::attempt([
             'email' => $data['email'],
             'password' => $data['password']
