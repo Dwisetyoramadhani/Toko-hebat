@@ -1,58 +1,335 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Dokumentasi Perbaikan Pada Backend TokoHebat
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+## Latar Belakang
 
-## About Laravel
+Backend TokoHebat sebelumnya dibuat dengan implementasi keamanan yang buruk (“Kode Yoga”). Walaupun aplikasi terlihat berjalan normal, terdapat beberapa celah serius yang dapat menyebabkan:
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- pengambilalihan akun pengguna,
+- akses ilegal ke halaman admin,
+- hingga kebocoran seluruh password pelanggan.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Pada proses audit kode, ditemukan tiga masalah utama:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+1. Authentication Bypass
+2. Broken Authorization
+3. Plain Text Password Storage
 
-## Learning Laravel
+Dokumentasi ini menjelaskan:
+- penyebab masalah,
+- dampak keamanan,
+- contoh implementasi yang salah,
+- serta solusi perbaikannya menggunakan fitur bawaan Laravel.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+---
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+# 1. Authentication Bypass
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+## Deskripsi Masalah
 
-## Agentic Development
+Sistem login hanya memeriksa email pengguna tanpa melakukan verifikasi password.
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Akibatnya, siapa pun dapat masuk ke akun pengguna lain hanya dengan mengetahui email mereka.
 
-```bash
-composer require laravel/boost --dev
+---
 
-php artisan boost:install
+## Kode Yoga (Salah)
+
+```php
+public function login(array $data)
+{
+    return User::where('email', $data['email'])
+        ->first();
+}
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+---
 
-## Contributing
+## Kenapa Ini Berbahaya?
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Kode di atas:
+- tidak memverifikasi password,
+- tidak melakukan hashing verification,
+- langsung menganggap email valid sebagai login berhasil.
 
-## Code of Conduct
+Artinya:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```text
+Penyerang hanya perlu mengetahui email korban
+untuk mengambil alih akun mereka.
+```
 
-## Security Vulnerabilities
+Ini termasuk:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+> Authentication Bypass Vulnerability
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Dampak Jika Dibiarkan
+
+- Account takeover
+- Penyalahgunaan akun pengguna
+- Kebocoran data pribadi
+- Penyalahgunaan transaksi
+- Kerusakan reputasi aplikasi
+
+---
+
+## Solusi Perbaikan
+
+Laravel sudah menyediakan sistem authentication aman melalui:
+
+```php
+Auth::attempt()
+```
+
+Method ini otomatis:
+- memverifikasi password,
+- mencocokkan hash password,
+- membuat sesi/token login dengan benar.
+
+---
+
+## Kode Perbaikan
+
+```php
+public function login(array $data)
+{
+    if (!Auth::attempt([
+        'email' => $data['email'],
+        'password' => $data['password']
+    ])) {
+        return false;
+    }
+
+    return Auth::user();
+}
+```
+
+---
+
+## Hasil Setelah Perbaikan
+
+Sistem sekarang:
+- mewajibkan email dan password valid,
+- menolak login ilegal,
+- mengikuti standar authentication Laravel.
+
+---
+
+# 2. Broken Authorization
+
+## Deskripsi Masalah
+
+Endpoint admin dapat diakses oleh user biasa karena tidak memiliki pembatasan role.
+
+---
+
+## Kode Yoga (Salah)
+
+```php
+oute::apiResource('categories', CategoryController::class)->except(['index', 'show']);
+```
+
+Tidak terdapat:
+- middleware auth,
+- middleware admin,
+- validasi role pengguna.
+
+---
+
+## Kenapa Ini Berbahaya?
+
+User biasa dapat:
+- mengakses data admin,
+- mengubah produk,
+- menghapus data,
+- melakukan privilege escalation.
+
+Bahkan dalam beberapa kasus:
+- hanya dengan mengganti ID atau URL.
+
+Contoh:
+
+```text
+/admin/products
+/admin/users
+/admin/orders
+```
+
+---
+
+## Dampak Jika Dibiarkan
+
+- Kebocoran data internal
+- Manipulasi database
+- Penghapusan data penting
+- Pengambilalihan sistem admin
+
+Ini termasuk:
+
+> Broken Access Control / Broken Authorization
+
+Dan merupakan salah satu celah keamanan paling berbahaya menurut OWASP.
+
+---
+
+## Solusi Perbaikan
+
+Menggunakan:
+- `auth:sanctum`
+- middleware role admin
+
+---
+
+## Middleware Admin
+
+```php
+class AdminMiddleware
+{
+    public function handle(Request $request, Closure $next)
+    {
+        if ($request->user()->role !== 'admin') {
+            return response()->json([
+                'message' => 'Forbidden'
+            ], 403);
+        }
+
+        return $next($request);
+    }
+}
+```
+
+---
+
+## Penggunaan Middleware
+
+```php
+Route::middleware('auth:sanctum', 'admin')->group(function () {
+    Route::apiResource('categories', CategoryController::class)->except(['index', 'show']);
+});
+```
+
+---
+
+## Hasil Setelah Perbaikan
+
+Sekarang:
+- hanya admin yang dapat mengakses endpoint admin,
+- user biasa otomatis ditolak,
+- authorization menjadi lebih aman dan terstruktur.
+
+---
+
+# 3. Plain Text Password Storage
+
+## Deskripsi Masalah
+
+Password pengguna disimpan langsung ke database tanpa enkripsi atau hashing.
+
+---
+
+## Kode Yoga (Salah)
+
+```php
+User::create([
+    'name' => $data['name'],
+    'email' => $data['email'],
+    'password' => $data['password']
+]);
+```
+
+---
+
+## Kenapa Ini Berbahaya?
+
+Jika database bocor:
+- semua password pengguna langsung terlihat,
+- penyerang dapat mencoba password tersebut di layanan lain.
+
+Karena banyak pengguna memakai password yang sama:
+- Gmail
+- media sosial
+- e-wallet
+- internet banking
+
+maka dampaknya bisa sangat besar.
+
+---
+
+## Dampak Jika Dibiarkan
+
+- Kebocoran seluruh akun pengguna
+- Credential stuffing attack
+- Penyalahgunaan akun eksternal
+- Kehilangan kepercayaan pengguna
+
+Ini termasuk:
+
+> Sensitive Data Exposure
+
+---
+
+## Solusi Perbaikan
+
+Laravel menyediakan hashing bawaan menggunakan:
+
+```php
+Hash::make()
+```
+
+---
+
+## Kode Perbaikan
+
+```php
+use Illuminate\Support\Facades\Hash;
+
+User::create([
+    'name' => $data['name'],
+    'email' => $data['email'],
+    'password' => Hash::make($data['password'])
+]);
+```
+
+---
+
+## Hasil Setelah Perbaikan
+
+Password sekarang:
+- tersimpan dalam bentuk hash,
+- tidak dapat dibaca langsung,
+- lebih aman jika database bocor.
+
+Contoh hasil hash:
+
+```text
+$2y$12$YpM9F0....
+```
+
+---
+
+# Kesimpulan
+
+Masalah utama pada “Kode Yoga” bukan pada syntax atau error program, tetapi pada lemahnya implementasi security backend.
+
+Tiga masalah utama yang ditemukan:
+
+| Masalah | Risiko |
+|---|---|
+| Authentication Bypass | Pengambilalihan akun |
+| Broken Authorization | Akses ilegal admin |
+| Plain Text Password | Kebocoran seluruh password |
+
+Laravel sebenarnya sudah menyediakan fitur keamanan bawaan yang cukup kuat, seperti:
+- `Auth::attempt()`
+- `Hash::make()`
+- Middleware
+- Sanctum Authentication
+
+Dengan menggunakan fitur tersebut secara benar, sistem menjadi:
+- lebih aman,
+- lebih terstruktur,
+- dan lebih sesuai dengan standar backend modern.
+
+
+
